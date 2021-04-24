@@ -169,10 +169,9 @@ void Gpu_Finder::ChoosePlatformAndDevice() {
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
 
-    if (platforms.empty()) {
-        std::cout << " No platforms found\n";
-        exit(1);
-    }
+    if (platforms.empty())
+        throw std::invalid_argument("No platforms found");
+
     int size = platforms.size();
 
     //Get all devices for each platform
@@ -184,10 +183,9 @@ void Gpu_Finder::ChoosePlatformAndDevice() {
     if (size == 1) {
         std::cout << "You have one platform: " << platforms[0].getInfo<CL_PLATFORM_NAME>() << std::endl;
 
-        if (all_devices[0].empty()) {
-            std::cerr << "No devices found!" << std::endl;
-            exit(1);
-        }
+        if (all_devices[0].empty())
+            throw std::invalid_argument("No devices found!");
+
         platform_ = platforms[0];
 
         int devices_count = all_devices[0].size();
@@ -232,10 +230,8 @@ void Gpu_Finder::ChoosePlatformAndDevice() {
     platform_ = platforms[number];
 
     int devices_count = all_devices[number].size();
-    if (!devices_count) {
-        std::cerr << "No devices found!" << std::endl;
-        exit(1);
-    }
+    if (!devices_count)
+        throw std::invalid_argument("No devices found!");
 
     std::cout << "You have " << devices_count << " devices available.\nChoose one (write number)" << std::endl;
     for (int i = 0; i < devices_count; ++i)
