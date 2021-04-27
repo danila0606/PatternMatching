@@ -58,12 +58,12 @@ int main () {
             }
 
             size_t cpu_time = 0;
-            Cpu_Finder cpu(patterns);
+            PatternMatchingCPU cpu(patterns);
             auto cpu_result = cpu.GetCounts(text, cpu_time);
 
             size_t gpu_time = 0;
-            Gpu_Finder gpu(patterns);
-            auto gpu_result = gpu.GetCounts(text, gpu_time);
+            PatternMatchingGPU gpu(patterns);
+            auto gpu_result = gpu.Match(text, gpu_time);
 
             assert(cpu_result.size() == gpu_result.size());
 

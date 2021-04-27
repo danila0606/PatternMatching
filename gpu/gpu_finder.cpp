@@ -1,6 +1,6 @@
 #include "gpu_finder.h"
 
-Gpu_Finder::Gpu_Finder(const std::vector<std::string>& patterns, const std::string &kernel_name):
+PatternMatchingGPU::PatternMatchingGPU(const std::vector<std::string>& patterns, const std::string &kernel_name):
     patterns_(patterns), kernel_name_(kernel_name) {
 
     // ChoosePlatformAndDevice();
@@ -21,29 +21,32 @@ Gpu_Finder::Gpu_Finder(const std::vector<std::string>& patterns, const std::stri
     program_ = cl::Program(context_, program_string);
     program_.build();
 
-    kernel_ = cl::Kernel(program_, "signature_match");
-
     BuildPatternTable();
     BuildSignatureTables();
 }
 
-std::vector<size_t> Gpu_Finder::GetCounts(const std::string& text, size_t& time) const {
+std::vector<size_t> PatternMatchingGPU::Match(const std::string& text, size_t& time) const {
 
     auto res = FindSmallPatterns(text);
 
-    cl::Buffer text_buffer(context_, CL_MEM_READ_ONLY, text.size() * sizeof(text[0]));
-    queue_.enqueueWriteBuffer(text_buffer, CL_TRUE, 0, text.size() * sizeof(text[0]), text.data());
+    cl::Buffer text_buffer(context_, CL_MEM_READ_ONLY, text.size() * sizeof(std::char_traits<char>));
+    queue_.enqueueWriteBuffer(text_buffer, CL_TRUE, 0, text.size() * sizeof(std::char_traits<char>), text.data());
 
     std::vector<cl::Event> events(maxdepth);
     const cl::NDRange global_size(text.size() / 2 + text.size() % 2);
 
-    std::vector<cl::Buffer> answer_buffers;
-    answer_buffers.reserve(maxdepth);
-    for(std::size_t i = 0; i < maxdepth; ++i)
-        answer_buffers.emplace_back(context_, CL_MEM_WRITE_ONLY, text.size() * sizeof(cl_float2));
+    std::vector<cl::Buffer> answer_buffers(maxdepth);
+    std::transform(answer_buffers.begin()
+                   , answer_buffers.end()
+                   , answer_buffers.begin()
+                   , [context = context_, size = text.size()](auto& buf) {
+        return cl::Buffer(context, CL_MEM_WRITE_ONLY, size * sizeof(cl_float2));
+    });
 
+    const size_t matrix_size = SignatureTables::n_;
+    cl::Buffer table_buf(context_, CL_MEM_READ_ONLY, matrix_size * matrix_size * sizeof(cl_float4));
 
-    cl::Buffer table_buf(context_, CL_MEM_READ_ONLY, 256 * 256 * sizeof(Signature_tables[0].at(0,0)));
+    cl::Kernel kernel_(program_, "signature_match");
     kernel_.setArg(0, text_buffer);
     kernel_.setArg(1, static_cast<cl_uint>(text.size()));
 
@@ -51,7 +54,7 @@ std::vector<size_t> Gpu_Finder::GetCounts(const std::string& text, size_t& time)
 
     for(std::size_t i = 0; i < maxdepth; ++i) {
 
-        queue_.enqueueWriteBuffer(table_buf, CL_TRUE, 0, 256 * 256 * sizeof(cl_float4), Signature_tables[i].data());
+        queue_.enqueueWriteBuffer(table_buf, CL_TRUE, 0, matrix_size * matrix_size * sizeof(cl_float4), signatures_.GetData(i));
 
         kernel_.setArg(2, answer_buffers[i]);
         kernel_.setArg(3, table_buf);
@@ -67,25 +70,7 @@ std::vector<size_t> Gpu_Finder::GetCounts(const std::string& text, size_t& time)
         events[step].wait();
         queue_.enqueueReadBuffer(answer_buffers[step], CL_TRUE, 0, answers.size() * sizeof(cl_float2), answers.data());
 
-        for (size_t n = 0; n < text.size() - 2; ++n) {
-            const cl_float2 coordinates = answers[n];
-
-            const auto i = static_cast<u_char>(static_cast<char>(coordinates.s[0]));
-            const auto j = static_cast<u_char>(static_cast<char>(coordinates.s[1]));
-
-            if(i && j) {
-
-                const std::size_t pattern_idx = Pattern_table.at(i,j)[step];
-                const auto& pat = patterns_[pattern_idx];
-
-                int k = 6;
-                for (; k < pat.size() && pat[k] == text[n + k]; ++k);
-
-                if (k == pat.size())
-                    ++res[pattern_idx];
-            }
-
-        }
+        CheckAnswers(text, answers, step, res);
     }
     auto finish_time = std::chrono::system_clock::now();
     time = (finish_time - start_time).count();
@@ -93,8 +78,34 @@ std::vector<size_t> Gpu_Finder::GetCounts(const std::string& text, size_t& time)
     return res;
 }
 
+void PatternMatchingGPU::CheckAnswers
+    (const std::string& text, const std::vector<cl_float2>& answers, size_t step, std::vector<size_t>& res) const {
+    for (size_t n = 0; n < text.size() - 2; ++n) {
+        const cl_float2 coordinates = answers[n];
 
-std::vector<size_t> Gpu_Finder::FindSmallPatterns(const std::string& text) const {
+        //const auto i = static_cast<u_char>(static_cast<char>(coordinates.s[0]));
+        //const auto j = static_cast<u_char>(static_cast<char>(coordinates.s[1]));
+
+        const auto i = static_cast<u_char>(static_cast<char>(coordinates.s[0]));
+        const auto j = static_cast<u_char>(static_cast<char>(coordinates.s[1]));
+
+        if(i && j) {
+
+            const std::size_t pattern_idx = Pattern_table.at(i,j)[step];
+            const auto& pat = patterns_[pattern_idx];
+
+            int k = 6;
+            for (; k < pat.size() && pat[k] == text[n + k]; ++k);
+
+            if (k == pat.size())
+                ++res[pattern_idx];
+        }
+
+    }
+}
+
+
+std::vector<size_t> PatternMatchingGPU::FindSmallPatterns(const std::string& text) const {
 
     std::vector<size_t> res(patterns_.size());
 
@@ -114,14 +125,14 @@ std::vector<size_t> Gpu_Finder::FindSmallPatterns(const std::string& text) const
 }
 
 
-void Gpu_Finder::BuildPatternTable() {
+void PatternMatchingGPU::BuildPatternTable() {
 
-    int num = 0, i = 0, j = 0;
+    int num = 0;
     for (const auto & p : patterns_)
     {
         if (p.size() > 5) {
-            i = static_cast<u_char>(p[0]);
-            j = static_cast<u_char>(p[1]);
+            auto i = static_cast<u_char>(p[0]);
+            auto j = static_cast<u_char>(p[1]);
             Pattern_table.at(i, j).push_back(num);
             maxdepth = std::max(maxdepth, Pattern_table.at(i,j).size());
         }
@@ -132,14 +143,44 @@ void Gpu_Finder::BuildPatternTable() {
         throw std::invalid_argument("Count of patterns = 0");
 }
 
-void Gpu_Finder::BuildSignatureTables() {
+void PatternMatchingGPU::BuildSignatureTables() {
+
+    std::vector<linal::Matrix<cl_float4>> tables(maxdepth);
+    for (int k = 0; k < maxdepth; ++k)
+        tables[k].resize(SignatureTables::n_, SignatureTables::n_);
+
+    for (size_t i = 0; i < SignatureTables::n_; ++i) {
+        for (size_t j = 0; j < SignatureTables::n_; ++j) {
+            auto&& patterns = Pattern_table.at(i, j);
+
+            for (int k = 0; k < maxdepth; ++k) {
+
+                if (patterns.size() > k) {
+
+                    const size_t n = patterns[k];
+                    auto&& pat = patterns_[n];
+
+                    if (pat.size() > 5) {
+                        tables[k].at(i, j).x = pat.at(2);
+                        tables[k].at(i, j).y = pat.at(3);
+                        tables[k].at(i, j).z = pat.at(4);
+                        tables[k].at(i, j).w = pat.at(5);
+                    }
+                }
+            }
+        }
+    }
+
+    signatures_.tables_ = tables;
+}
+
+
+/*void PatternMatchingGPU::BuildSignatureTables() {
 
     Signature_tables.resize(maxdepth);
-    for (int k = 0; k < maxdepth; ++k)
-        Signature_tables[k].resize(256, 256);
 
-    for (size_t i = 0; i < 256; ++i) {
-        for (size_t j = 0; j < 256; ++j) {
+    for (size_t i = 0; i < SignatureTable::n_; ++i) {
+        for (size_t j = 0; j < SignatureTable::n_; ++j) {
             auto&& patterns = Pattern_table.at(i, j);
 
             for (int k = 0; k < maxdepth; ++k) {
@@ -160,11 +201,11 @@ void Gpu_Finder::BuildSignatureTables() {
         }
     }
 
-}
+}*/
 
 
 
-void Gpu_Finder::ChoosePlatformAndDevice() {
+void PatternMatchingGPU::ChoosePlatformAndDevice() {
 
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);
@@ -247,7 +288,7 @@ void Gpu_Finder::ChoosePlatformAndDevice() {
     device_ = all_devices[number][N];
 }
 
-void Gpu_Finder::ChooseDefaultPlatformAndDevice() {
+void PatternMatchingGPU::ChooseDefaultPlatformAndDevice() {
 
     std::vector<cl::Platform> platforms;
     cl::Platform::get(&platforms);

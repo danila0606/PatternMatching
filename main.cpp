@@ -21,10 +21,10 @@ std::string ReadString(std::istream& in) {
 int main() {
 
     try {
-         std::istream& in = std::cin;
-        /*std::ifstream in("tests//my_test.txt");
+         //std::istream& in = std::cin;
+        std::ifstream in("tests//my_test.txt");
         if (!in.is_open())
-            throw std::runtime_error("Can't open file");*/
+            throw std::runtime_error("Can't open file");
 
         const std::string text = ReadString(in);
 
@@ -40,10 +40,10 @@ int main() {
             patterns.push_back(pat);
         }
 
-        Gpu_Finder Finder(patterns);
+        PatternMatchingGPU Finder(patterns);
         size_t time = 0;
 
-        auto result = Finder.GetCounts(text, time);
+        auto result = Finder.Match(text, time);
         for (int i = 0; i < result.size(); ++i)
             std::cout << i + 1 << " " << result[i] << std::endl;
 

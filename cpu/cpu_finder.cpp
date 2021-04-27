@@ -1,6 +1,6 @@
 #include "cpu_finder.h"
 
-size_t Cpu_Finder::find(const std::string& text, const std::string& pattern) const {
+size_t PatternMatchingCPU::find(const std::string& text, const std::string& pattern) const {
 
     if ( (pattern.size() > text.size()) || (pattern.empty()) )
         return 0;
@@ -12,7 +12,7 @@ size_t Cpu_Finder::find(const std::string& text, const std::string& pattern) con
     return ans;
 }
 
-std::vector<size_t> Cpu_Finder::GetCounts(const std::string& text, size_t& time) const {
+std::vector<size_t> PatternMatchingCPU::GetCounts(const std::string& text, size_t& time) const {
 
     auto start = std::chrono::system_clock::now();
 

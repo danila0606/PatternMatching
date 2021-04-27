@@ -11,7 +11,7 @@
 #include <sstream>
 #include <fstream>
 
-class Gpu_Finder final {
+class PatternMatchingGPU final {
 
 private:
 
@@ -20,7 +20,6 @@ private:
     cl::Device device_;
     cl::CommandQueue queue_;
     cl::Program program_;
-    mutable cl::Kernel kernel_;
 
     const std::string kernel_name_;
 
@@ -31,8 +30,14 @@ private:
     linal::Matrix<std::vector<size_t>> Pattern_table = linal::Matrix<std::vector<size_t>>(256,256);
     size_t maxdepth = 0;
 
-    std::vector<linal::Matrix<cl_float4>> Signature_tables;
+    struct SignatureTables final {
+        static constexpr unsigned n_ = 256; // number of rows and columns in matrix
 
+        std::vector<linal::Matrix<cl_float4>> tables_;
+
+        const cl_float4* GetData(size_t i) const {return tables_[i].data();};
+
+    } signatures_;
 
 private:
 
@@ -46,8 +51,9 @@ private:
 
 public:
 
-    explicit Gpu_Finder(const std::vector<std::string>& patterns, const std::string& kernel_name = "match.cl");
+    explicit PatternMatchingGPU(const std::vector<std::string>& patterns, const std::string& kernel_name = "match.cl");
 
-    std::vector<size_t> GetCounts(const std::string& text, size_t& time) const;
+    std::vector<size_t> Match(const std::string& text, size_t& time) const;
+    void CheckAnswers(const std::string& text, const std::vector<cl_float2>& answers, size_t step, std::vector<size_t>& res) const;
 
 };
