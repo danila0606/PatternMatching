@@ -21,10 +21,10 @@ std::string ReadString(std::istream& in) {
 int main() {
 
     try {
-         //std::istream& in = std::cin;
-        std::ifstream in("tests//my_test.txt");
+        std::istream& in = std::cin;
+/*      std::ifstream in("tests//my_test.txt");
         if (!in.is_open())
-            throw std::runtime_error("Can't open file");
+            throw std::runtime_error("Can't open file");*/
 
         const std::string text = ReadString(in);
 
